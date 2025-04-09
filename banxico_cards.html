@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banxico Credit and Debit Cards Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: white;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .header-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .date-range {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .main-content {
+            margin-top: 80px;
+            padding: 20px;
+        }
+        .quadrant-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 20px;
+            height: calc(100vh - 120px);
+        }
+        .quadrant {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .quadrant h2 {
+            margin: 0;
+            color: #333;
+            font-size: 1.2em;
+        }
+        .quadrant-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .toggle-container {
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .toggle-group {
+            display: inline-flex;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            padding: 2px;
+        }
+        .toggle-button {
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #666;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: none;
+            white-space: nowrap;
+        }
+        .toggle-button:first-child {
+            border-radius: 4px 0 0 4px;
+        }
+        .toggle-button:last-child {
+            border-radius: 0 4px 4px 0;
+        }
+        .toggle-button.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .toggle-button:hover:not(.active) {
+            background-color: #d0d0d0;
+        }
+        input[type="date"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .chart-container {
+            position: relative;
+            flex-grow: 1;
+            width: 100%;
+            min-height: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-section">
+            <span>Card type:</span>
+            <div class="toggle-group">
+                <button id="allToggle" class="toggle-button active">All</button>
+                <button id="debitToggle" class="toggle-button">Debit</button>
+                <button id="creditToggle" class="toggle-button">Credit</button>
+            </div>
+        </div>
+        <div class="header-section date-range">
+            <span>From:</span>
+            <input type="date" id="startDate">
+            <span>To:</span>
+            <input type="date" id="endDate">
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="quadrant-grid">
+            <div class="quadrant">
+                <div class="quadrant-header">
+                    <h2>Issued Cards</h2>
+        <div class="toggle-container">
+            <div class="toggle-group">
+                <button id="issuedToggle" class="toggle-button active">Issued Cards</button>
+                <button id="usedToggle" class="toggle-button">Used Cards</button>
+                        </div>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="cardsChart"></canvas>
+                </div>
+            </div>
+            <div class="quadrant">
+                <h2>Chart 2</h2>
+                <div class="chart-container">
+                    <canvas id="chart2"></canvas>
+                </div>
+            </div>
+            <div class="quadrant" id="quadrant3">
+                <h2>Amount Operated by Category</h2>
+                <div class="chart-container">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+            <div class="quadrant">
+                <h2>Chart 4</h2>
+                <div class="chart-container">
+                    <canvas id="chart4"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Date range state
+        let startDate = null;
+        let endDate = null;
+        
+        // Data cache to store all fetched series
+        const dataCache = {
+            cards: {},
+            amount: {},
+            transactions: {}
+        };
+        
+        // Flag to track if all data has been loaded
+        let allDataLoaded = false;
+        
+        // Loading indicator
+        let loadingIndicator = null;
+
+        // Helper function to filter data by date range
+        function filterDataByDateRange(data, startDate, endDate) {
+            if (!startDate || !endDate) return data;
+            
+            return data.filter(item => {
+                const date = new Date(item.fecha);
+                return date >= startDate && date <= endDate;
+            });
+        }
+
+        // Helper function to validate date range
+        function validateDateRange(start, end) {
+            if (start && end && start > end) {
+                alert('End date cannot be before start date');
+                return false;
+            }
+            return true;
+        }
+
+        // Function to update all charts
+        function updateAllCharts() {
+            if (!allDataLoaded) {
+                console.warn('Data not fully loaded yet');
+                return;
+            }
+            
+            createChart(currentMode);
+            createCategoryChart();
+        }
+
+        const API_TOKEN = 'f1d62f388e9038fc9c9453d68e765b788a4ad53c71789f1864da5c6c7fa5e2ae';
+        const BASE_URL = 'https://www.banxico.org.mx/SieAPIRest/service/v1/series';
+        
+        // Series IDs for cards issued/used
+        const CARDS = {
+            issued: {
+                credit: 'SF61870',
+                debit: 'SF61871'
+            },
+            used: {
+                credit: 'SF61872',
+                debit: 'SF61873'
+            }
+        };
+
+        // Series IDs for amount operated by category
+        const AMOUNT = {
+            'Travel Agencies': {
+                debit: 'SF351088',
+                credit: 'SF351089'
+            },
+            'Payment Aggregators': {
+                debit: 'SF351091',
+                credit: 'SF351092'
+            },
+            'Insurance Companies': {
+                debit: 'SF351094',
+                credit: 'SF351095'
+            },
+            'Charity': {
+                debit: 'SF351097',
+                credit: 'SF351098'
+            },
+            'Colleges and Universities': {
+                debit: 'SF351100',
+                credit: 'SF351101'
+            },
+            'Fast Food': {
+                debit: 'SF351103',
+                credit: 'SF351104'
+            },
+            'Basic Education': {
+                debit: 'SF351106',
+                credit: 'SF351107'
+            },
+            'Entertainment': {
+                debit: 'SF351109',
+                credit: 'SF351110'
+            },
+            'Parking lots': {
+                debit: 'SF351112',
+                credit: 'SF351113'
+            },
+            'Pharmacies': {
+                debit: 'SF351115',
+                credit: 'SF351116'
+            },
+            'Gas Stations': {
+                debit: 'SF351118',
+                credit: 'SF351119'
+            },
+            'Government': {
+                debit: 'SF351121',
+                credit: 'SF351122'
+            },
+            'Hypermarkets': {
+                debit: 'SF351124',
+                credit: 'SF351125'
+            },
+            'Daycare centers': {
+                debit: 'SF351127',
+                credit: 'SF351128'
+            },
+            'Hospitals': {
+                debit: 'SF351130',
+                credit: 'SF351131'
+            },
+            'Hotels': {
+                debit: 'SF351133',
+                credit: 'SF351134'
+            },
+            'Miscellaneous stores': {
+                debit: 'SF351136',
+                credit: 'SF351137'
+            },
+            'Doctors and Dentists': {
+                debit: 'SF351139',
+                credit: 'SF351140'
+            },
+            'Not defined': {
+                debit: 'SF351142',
+                credit: 'SF351143'
+            },
+            'Others': {
+                debit: 'SF351145',
+                credit: 'SF351146'
+            },
+            'Toll': {
+                debit: 'SF351148',
+                credit: 'SF351149'
+            },
+            'Spare parts and hardware stores': {
+                debit: 'SF351151',
+                credit: 'SF351152'
+            },
+            'Car rental': {
+                debit: 'SF351154',
+                credit: 'SF351155'
+            },
+            'Restaurants': {
+                debit: 'SF351157',
+                credit: 'SF351158'
+            },
+            'Beauty salons': {
+                debit: 'SF351160',
+                credit: 'SF351161'
+            },
+            'Supermarkets': {
+                debit: 'SF351163',
+                credit: 'SF351164'
+            },
+            'Telecommunication': {
+                debit: 'SF351166',
+                credit: 'SF351167'
+            },
+            'Air transport': {
+                debit: 'SF351169',
+                credit: 'SF351170'
+            },
+            'Ground passenger transportation': {
+                debit: 'SF351172',
+                credit: 'SF351173'
+            },
+            'Retail sales': {
+                debit: 'SF351175',
+                credit: 'SF351176'
+            }
+        };
+
+        // Series IDs for number of transactions by category
+        const TRANSACTIONS = {
+            'Travel Agencies': {
+                debit: 'SF351181',
+                credit: 'SF351182'
+            },
+            'Payment Aggregators': {
+                debit: 'SF351184',
+                credit: 'SF351185'
+            },
+            'Insurance Companies': {
+                debit: 'SF351187',
+                credit: 'SF351188'
+            },
+            'Charity': {
+                debit: 'SF351190',
+                credit: 'SF351191'
+            },
+            'Colleges and Universities': {
+                debit: 'SF351193',
+                credit: 'SF351194'
+            },
+            'Fast Food': {
+                debit: 'SF351196',
+                credit: 'SF351197'
+            },
+            'Basic Education': {
+                debit: 'SF351199',
+                credit: 'SF351200'
+            },
+            'Entertainment': {
+                debit: 'SF351202',
+                credit: 'SF351203'
+            },
+            'Parking lots': {
+                debit: 'SF351205',
+                credit: 'SF351206'
+            },
+            'Pharmacies': {
+                debit: 'SF351208',
+                credit: 'SF351209'
+            },
+            'Gas Stations': {
+                debit: 'SF351211',
+                credit: 'SF351212'
+            },
+            'Government': {
+                debit: 'SF351214',
+                credit: 'SF351215'
+            },
+            'Hypermarkets': {
+                debit: 'SF351217',
+                credit: 'SF351218'
+            },
+            'Daycare centers': {
+                debit: 'SF351220',
+                credit: 'SF351221'
+            },
+            'Hospitals': {
+                debit: 'SF351223',
+                credit: 'SF351224'
+            },
+            'Hotels': {
+                debit: 'SF351226',
+                credit: 'SF351227'
+            },
+            'Miscellaneous stores': {
+                debit: 'SF351229',
+                credit: 'SF351230'
+            },
+            'Doctors and Dentists': {
+                debit: 'SF351232',
+                credit: 'SF351233'
+            },
+            'Not defined': {
+                debit: 'SF351235',
+                credit: 'SF351236'
+            },
+            'Others': {
+                debit: 'SF351238',
+                credit: 'SF351239'
+            },
+            'Toll': {
+                debit: 'SF351241',
+                credit: 'SF351242'
+            },
+            'Spare parts and hardware stores': {
+                debit: 'SF351244',
+                credit: 'SF351245'
+            },
+            'Car rental': {
+                debit: 'SF351247',
+                credit: 'SF351248'
+            },
+            'Restaurants': {
+                debit: 'SF351250',
+                credit: 'SF351251'
+            },
+            'Beauty salons': {
+                debit: 'SF351253',
+                credit: 'SF351254'
+            },
+            'Supermarkets': {
+                debit: 'SF351256',
+                credit: 'SF351257'
+            },
+            'Telecommunication': {
+                debit: 'SF351259',
+                credit: 'SF351260'
+            },
+            'Air transport': {
+                debit: 'SF351262',
+                credit: 'SF351263'
+            },
+            'Ground passenger transportation': {
+                debit: 'SF351265',
+                credit: 'SF351266'
+            },
+            'Retail sales': {
+                debit: 'SF351268',
+                credit: 'SF351269'
+            }
+        };
+
+        let currentChart = null;
+        let currentMode = 'issued';
+        let categoryChart = null;
+
+        // Function to fetch data for multiple series IDs in batches
+        async function fetchDataBatch(seriesIds) {
+            // Split series IDs into batches of 20 (API limit)
+            const batches = [];
+            for (let i = 0; i < seriesIds.length; i += 20) {
+                batches.push(seriesIds.slice(i, i + 20));
+            }
+            
+            const results = {};
+            
+            // Process each batch with a delay to respect rate limits
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i];
+                const batchIds = batch.join(',');
+                const url = `${BASE_URL}/${batchIds}/datos?token=${API_TOKEN}`;
+                
+                try {
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    
+                    // Process each series in the response
+                    if (data.bmx && data.bmx.series) {
+                        data.bmx.series.forEach(series => {
+                            results[series.idSerie] = series.datos;
+                        });
+                    }
+                    
+                    // Add a delay between batches to respect rate limits (80 queries per minute)
+                    if (i < batches.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                    }
+                } catch (error) {
+                    console.error('Error fetching batch data:', error);
+                }
+            }
+            
+            return results;
+        }
+
+        // Function to collect all series IDs from our data structures
+        function getAllSeriesIds() {
+            const seriesIds = [];
+            
+            // Add CARDS series IDs
+            Object.values(CARDS).forEach(cardType => {
+                seriesIds.push(cardType.credit, cardType.debit);
+            });
+            
+            // Add AMOUNT series IDs
+            Object.values(AMOUNT).forEach(category => {
+                seriesIds.push(category.credit, category.debit);
+            });
+            
+            // Add TRANSACTIONS series IDs
+            Object.values(TRANSACTIONS).forEach(category => {
+                seriesIds.push(category.credit, category.debit);
+            });
+            
+            return seriesIds;
+        }
+
+        // Function to fetch data from cache or API
+        async function fetchData(seriesId) {
+            // If data is already in cache, return it
+            if (dataCache.cards[seriesId]) {
+                return dataCache.cards[seriesId];
+            }
+            
+            if (dataCache.amount[seriesId]) {
+                return dataCache.amount[seriesId];
+            }
+            
+            if (dataCache.transactions[seriesId]) {
+                return dataCache.transactions[seriesId];
+            }
+            
+            // If not in cache and all data is loaded, something went wrong
+            if (allDataLoaded) {
+                console.error(`Series ID ${seriesId} not found in cache`);
+                return [];
+            }
+            
+            // If data is still loading, wait for it
+            console.warn(`Waiting for data to load for series ID ${seriesId}`);
+            return [];
+        }
+
+        // Function to load all data at once
+        async function loadAllData() {
+            // Show loading indicator
+            showLoadingIndicator();
+            
+            try {
+                // Get all series IDs
+                const allSeriesIds = getAllSeriesIds();
+                
+                // Fetch all data in batches
+                const allData = await fetchDataBatch(allSeriesIds);
+                
+                // Organize data into cache
+                // CARDS data
+                Object.entries(CARDS).forEach(([cardType, ids]) => {
+                    dataCache.cards[ids.credit] = allData[ids.credit] || [];
+                    dataCache.cards[ids.debit] = allData[ids.debit] || [];
+                });
+                
+                // AMOUNT data
+                Object.entries(AMOUNT).forEach(([category, ids]) => {
+                    dataCache.amount[ids.credit] = allData[ids.credit] || [];
+                    dataCache.amount[ids.debit] = allData[ids.debit] || [];
+                });
+                
+                // TRANSACTIONS data
+                Object.entries(TRANSACTIONS).forEach(([category, ids]) => {
+                    dataCache.transactions[ids.credit] = allData[ids.credit] || [];
+                    dataCache.transactions[ids.debit] = allData[ids.debit] || [];
+                });
+                
+                // Mark all data as loaded
+                allDataLoaded = true;
+                
+                // Hide loading indicator
+                hideLoadingIndicator();
+                
+                // Initialize charts with the loaded data
+                initializeCharts();
+                
+            } catch (error) {
+                console.error('Error loading all data:', error);
+                hideLoadingIndicator();
+                alert('Error loading data. Please refresh the page.');
+            }
+        }
+
+        // Function to show loading indicator
+        function showLoadingIndicator() {
+            // Create loading indicator if it doesn't exist
+            if (!loadingIndicator) {
+                loadingIndicator = document.createElement('div');
+                loadingIndicator.id = 'loadingIndicator';
+                loadingIndicator.style.position = 'fixed';
+                loadingIndicator.style.top = '0';
+                loadingIndicator.style.left = '0';
+                loadingIndicator.style.width = '100%';
+                loadingIndicator.style.height = '100%';
+                loadingIndicator.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+                loadingIndicator.style.display = 'flex';
+                loadingIndicator.style.justifyContent = 'center';
+                loadingIndicator.style.alignItems = 'center';
+                loadingIndicator.style.zIndex = '9999';
+                
+                const spinner = document.createElement('div');
+                spinner.style.width = '50px';
+                spinner.style.height = '50px';
+                spinner.style.border = '5px solid #f3f3f3';
+                spinner.style.borderTop = '5px solid #3498db';
+                spinner.style.borderRadius = '50%';
+                spinner.style.animation = 'spin 1s linear infinite';
+                
+                const message = document.createElement('div');
+                message.textContent = 'Loading data...';
+                message.style.marginTop = '20px';
+                message.style.fontSize = '18px';
+                message.style.color = '#333';
+                
+                const container = document.createElement('div');
+                container.style.display = 'flex';
+                container.style.flexDirection = 'column';
+                container.style.alignItems = 'center';
+                
+                container.appendChild(spinner);
+                container.appendChild(message);
+                loadingIndicator.appendChild(container);
+                
+                // Add CSS animation
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                document.body.appendChild(loadingIndicator);
+            } else {
+                loadingIndicator.style.display = 'flex';
+            }
+        }
+
+        // Function to hide loading indicator
+        function hideLoadingIndicator() {
+            if (loadingIndicator) {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        // Function to initialize charts after data is loaded
+        function initializeCharts() {
+            // Set fixed date range
+            const minDate = new Date('2002-01-01');
+            const today = new Date();
+            
+            // Set the date inputs
+            document.getElementById('startDate').value = minDate.toISOString().split('T')[0];
+            document.getElementById('endDate').value = today.toISOString().split('T')[0];
+            
+            // Set the date range state
+            startDate = minDate;
+            endDate = today;
+            
+            // Create initial charts and set card type
+            createChart('issued');
+            createCategoryChart();
+            updateCardTypeButtons('all');
+        }
+
+        async function createChart(mode) {
+            const creditData = dataCache.cards[CARDS[mode].credit] || [];
+            const debitData = dataCache.cards[CARDS[mode].debit] || [];
+
+            // Filter data based on date range
+            const filteredCreditData = filterDataByDateRange(creditData, startDate, endDate);
+            const filteredDebitData = filterDataByDateRange(debitData, startDate, endDate);
+
+            // Use filtered data for the chart
+            const dates = filteredCreditData.map(item => item.fecha);
+            const creditValues = filteredCreditData.map(item => parseFloat(item.dato));
+            const debitValues = filteredDebitData.map(item => parseFloat(item.dato));
+
+            const ctx = document.getElementById('cardsChart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: 'Credit',
+                            data: creditValues,
+                            backgroundColor: 'rgba(76, 175, 80, 0.8)',
+                            borderColor: '#4CAF50',
+                            borderWidth: 1,
+                            stack: 'Total'
+                        },
+                        {
+                            label: 'Debit',
+                            data: debitValues,
+                            backgroundColor: 'rgba(33, 150, 243, 0.8)',
+                            borderColor: '#2196F3',
+                            borderWidth: 1,
+                            stack: 'Total'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            onClick: function() {},
+                            align: 'end'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return tooltipItems[0].label; // This is the date
+                                },
+                                label: function(context) {
+                                    const creditValue = context.chart.data.datasets[0].data[context.dataIndex];
+                                    const debitValue = context.chart.data.datasets[1].data[context.dataIndex];
+                                    const total = creditValue + debitValue;
+                                    const labels = [];
+
+                                    // Check which datasets are visible
+                                    const isCreditVisible = context.chart.isDatasetVisible(0);
+                                    const isDebitVisible = context.chart.isDatasetVisible(1);
+
+                                    // If both datasets are visible, show total first
+                                    if (isCreditVisible && isDebitVisible) {
+                                        labels.push(`Total: ${new Intl.NumberFormat('en-US').format(total)}`);
+                                    }
+
+                                    // Add Debit info if visible (now before Credit)
+                                    if (isDebitVisible) {
+                                        const debitLabel = `Debit: ${new Intl.NumberFormat('en-US').format(debitValue)}`;
+                                        if (isCreditVisible) {
+                                            // Only add percentage if both are visible
+                                            const debitPercent = ((debitValue / total) * 100).toFixed(1);
+                                            labels.push(`${debitLabel} (${debitPercent}%)`);
+                                        } else {
+                                            labels.push(debitLabel);
+                                        }
+                                    }
+
+                                    // Add Credit info if visible (now after Debit)
+                                    if (isCreditVisible) {
+                                        const creditLabel = `Credit: ${new Intl.NumberFormat('en-US').format(creditValue)}`;
+                                        if (isDebitVisible) {
+                                            // Only add percentage if both are visible
+                                            const creditPercent = ((creditValue / total) * 100).toFixed(1);
+                                            labels.push(`${creditLabel} (${creditPercent}%)`);
+                                        } else {
+                                            labels.push(creditLabel);
+                                        }
+                                    }
+
+                                    return labels;
+                                }
+                            },
+                            displayColors: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Cards (M)'
+                            },
+                            stacked: true,
+                            grid: {
+                                display: false
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: false,
+                            },
+                            stacked: true,
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    const date = new Date(this.getLabelForValue(value));
+                                    
+                                    // Calculate the total number of ticks
+                                    const totalTicks = values.length;
+                                    
+                                    // If we have too many ticks (e.g., more than 12), show only years
+                                    if (totalTicks > 12) {
+                                        // Only show the year for January or first data point
+                                        if (date.getMonth() === 0 || index === 0) {
+                                            return date.getFullYear();
+                                        }
+                                        return '';
+                                    } else {
+                                        // Show month and year
+                                        return date.toLocaleDateString('en-US', { 
+                                            month: 'short',
+                                            year: 'numeric'
+                                        });
+                                    }
+                                },
+                                maxRotation: 0,
+                                minRotation: 0
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Toggle button functionality
+        function updateToggleButtons(mode) {
+            document.getElementById('issuedToggle').classList.toggle('active', mode === 'issued');
+            document.getElementById('usedToggle').classList.toggle('active', mode === 'used');
+            
+            // Update the first quadrant header text while preserving card type
+            const firstQuadrantH2 = document.querySelector('.quadrant h2');
+            const baseTitle = mode === 'issued' ? 'Issued Cards' : 'Used Cards';
+            
+            // Check if there's a current card type selected
+            const currentType = document.querySelector('#debitToggle').classList.contains('active') ? 'Debit' :
+                              document.querySelector('#creditToggle').classList.contains('active') ? 'Credit' : null;
+            
+            firstQuadrantH2.textContent = currentType ? `${baseTitle} - ${currentType}` : baseTitle;
+        }
+
+        document.getElementById('issuedToggle').addEventListener('click', function() {
+            if (currentMode !== 'issued') {
+                currentMode = 'issued';
+                updateToggleButtons('issued');
+                createChart('issued');
+            }
+        });
+
+        document.getElementById('usedToggle').addEventListener('click', function() {
+            if (currentMode !== 'used') {
+                currentMode = 'used';
+                updateToggleButtons('used');
+                createChart('used');
+            }
+        });
+
+        // Card type toggle functionality
+        function updateCardTypeButtons(type) {
+            // Update button UI
+            document.getElementById('allToggle').classList.toggle('active', type === 'all');
+            document.getElementById('debitToggle').classList.toggle('active', type === 'debit');
+            document.getElementById('creditToggle').classList.toggle('active', type === 'credit');
+
+            // Update all quadrant titles with card type
+            const quadrants = document.querySelectorAll('.quadrant');
+            quadrants.forEach((quadrant, index) => {
+                const h2 = quadrant.querySelector('h2');
+                let baseTitle = h2.textContent;
+                
+                // For the first quadrant, preserve the Issued/Used status
+                if (index === 0) {
+                    baseTitle = currentMode === 'issued' ? 'Issued Cards' : 'Used Cards';
+                }
+                
+                // Remove any existing card type from the title
+                baseTitle = baseTitle.replace(/ - (Debit|Credit)$/, '');
+                
+                // Add new card type if not 'all'
+                if (type !== 'all') {
+                    h2.textContent = `${baseTitle} - ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+                } else {
+                    h2.textContent = baseTitle;
+                }
+            });
+
+            // Update chart visibility based on type
+            if (currentChart) {
+                if (type === 'all') {
+                    // Show both datasets
+                    currentChart.show(0); // Show Credit Cards (index 0)
+                    currentChart.show(1); // Show Debit Cards (index 1)
+                } else if (type === 'credit') {
+                    // Show only Credit Cards
+                    currentChart.show(0); // Show Credit Cards (index 0)
+                    currentChart.hide(1); // Hide Debit Cards (index 1)
+                } else if (type === 'debit') {
+                    // Show only Debit Cards
+                    currentChart.hide(0); // Hide Credit Cards (index 0)
+                    currentChart.show(1); // Show Debit Cards (index 1)
+                }
+            }
+        }
+
+        document.getElementById('allToggle').addEventListener('click', function() {
+            updateCardTypeButtons('all');
+        });
+
+        document.getElementById('debitToggle').addEventListener('click', function() {
+            updateCardTypeButtons('debit');
+        });
+
+        document.getElementById('creditToggle').addEventListener('click', function() {
+            updateCardTypeButtons('credit');
+        });
+
+        // Add event listeners for date inputs
+        document.getElementById('startDate').addEventListener('change', function(e) {
+            const newStartDate = e.target.value ? new Date(e.target.value) : null;
+            if (validateDateRange(newStartDate, endDate)) {
+                startDate = newStartDate;
+                updateAllCharts();
+            }
+        });
+
+        document.getElementById('endDate').addEventListener('change', function(e) {
+            const newEndDate = e.target.value ? new Date(e.target.value) : null;
+            if (validateDateRange(startDate, newEndDate)) {
+                endDate = newEndDate;
+                updateAllCharts();
+            }
+        });
+
+        // Function to create category chart
+        async function createCategoryChart() {
+            // Initialize arrays to store aggregated data
+            let allDates = new Set();
+            let aggregatedData = {};
+
+            // Process data from all categories
+            for (const category of Object.keys(AMOUNT)) {
+                const creditData = dataCache.amount[AMOUNT[category].credit] || [];
+                const debitData = dataCache.amount[AMOUNT[category].debit] || [];
+
+                // Filter data based on date range
+                const filteredCreditData = filterDataByDateRange(creditData, startDate, endDate);
+                const filteredDebitData = filterDataByDateRange(debitData, startDate, endDate);
+
+                // Add dates to the set
+                filteredCreditData.forEach(item => allDates.add(item.fecha));
+                filteredDebitData.forEach(item => allDates.add(item.fecha));
+
+                // Aggregate data by date
+                filteredCreditData.forEach(item => {
+                    if (!aggregatedData[item.fecha]) {
+                        aggregatedData[item.fecha] = { credit: 0, debit: 0 };
+                    }
+                    aggregatedData[item.fecha].credit += parseFloat(item.dato);
+                });
+
+                filteredDebitData.forEach(item => {
+                    if (!aggregatedData[item.fecha]) {
+                        aggregatedData[item.fecha] = { credit: 0, debit: 0 };
+                    }
+                    aggregatedData[item.fecha].debit += parseFloat(item.dato);
+                });
+            }
+
+            // Convert dates set to sorted array
+            const dates = Array.from(allDates).sort();
+            
+            // Create arrays for chart data
+            const creditValues = dates.map(date => aggregatedData[date]?.credit || 0);
+            const debitValues = dates.map(date => aggregatedData[date]?.debit || 0);
+
+            const ctx = document.getElementById('categoryChart').getContext('2d');
+            if (categoryChart) {
+                categoryChart.destroy();
+            }
+
+            categoryChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: 'Credit',
+                            data: creditValues,
+                            backgroundColor: 'rgba(76, 175, 80, 0.8)',
+                            borderColor: '#4CAF50',
+                            borderWidth: 1,
+                            stack: 'Total'
+                        },
+                        {
+                            label: 'Debit',
+                            data: debitValues,
+                            backgroundColor: 'rgba(33, 150, 243, 0.8)',
+                            borderColor: '#2196F3',
+                            borderWidth: 1,
+                            stack: 'Total'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: false,
+                            text: 'Amount Operated by Category',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        legend: {
+                            position: 'top',
+                            onClick: function() {},
+                            align: 'end'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return tooltipItems[0].label;
+                                },
+                                label: function(context) {
+                                    const creditValue = context.chart.data.datasets[0].data[context.dataIndex];
+                                    const debitValue = context.chart.data.datasets[1].data[context.dataIndex];
+                                    const total = creditValue + debitValue;
+                                    const labels = [];
+
+                                    const isCreditVisible = context.chart.isDatasetVisible(0);
+                                    const isDebitVisible = context.chart.isDatasetVisible(1);
+
+                                    if (isCreditVisible && isDebitVisible) {
+                                        labels.push(`Total: ${new Intl.NumberFormat('en-US').format(total)}`);
+                                    }
+
+                                    if (isDebitVisible) {
+                                        const debitLabel = `Debit: ${new Intl.NumberFormat('en-US').format(debitValue)}`;
+                                        if (isCreditVisible) {
+                                            const debitPercent = ((debitValue / total) * 100).toFixed(1);
+                                            labels.push(`${debitLabel} (${debitPercent}%)`);
+                                        } else {
+                                            labels.push(debitLabel);
+                                        }
+                                    }
+
+                                    if (isCreditVisible) {
+                                        const creditLabel = `Credit: ${new Intl.NumberFormat('en-US').format(creditValue)}`;
+                                        if (isDebitVisible) {
+                                            const creditPercent = ((creditValue / total) * 100).toFixed(1);
+                                            labels.push(`${creditLabel} (${creditPercent}%)`);
+                                        } else {
+                                            labels.push(creditLabel);
+                                        }
+                                    }
+
+                                    return labels;
+                                }
+                            },
+                            usePointStyle: false,
+                            boxPadding: 0,
+                            displayColors: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Amount Operated ($B MXN)'
+                            },
+                            stacked: true,
+                            grid: {
+                                display: false
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: false,
+                            },
+                            stacked: true,
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    const date = new Date(this.getLabelForValue(value));
+                                    
+                                    // Calculate the total number of ticks
+                                    const totalTicks = values.length;
+                                    
+                                    // If we have too many ticks (e.g., more than 12), show only years
+                                    if (totalTicks > 12) {
+                                        // Only show the year for January or first data point
+                                        if (date.getMonth() === 0 || index === 0) {
+                                            return date.getFullYear();
+                                        }
+                                        return '';
+                                    } else {
+                                        // Show month and year
+                                        return date.toLocaleDateString('en-US', { 
+                                            month: 'short',
+                                            year: 'numeric'
+                                        });
+                                    }
+                                },
+                                maxRotation: 0,
+                                minRotation: 0
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize the page
+        window.onload = () => {
+            // Load all data at once
+            loadAllData();
+        };
+    </script>
+</body>
+</html> 
