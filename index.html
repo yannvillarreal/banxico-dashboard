@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Banxico Credit and Debit Cards Visualization</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@2.3.0"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -110,6 +111,17 @@
             width: 100%;
             min-height: 0;
         }
+        .category-select {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .category-select:hover {
+            border-color: #999;
+        }
     </style>
 </head>
 <body>
@@ -153,7 +165,12 @@
                 </div>
             </div>
             <div class="quadrant" id="quadrant3">
-                <h2>Amount Operated by Category</h2>
+                <div class="quadrant-header">
+                    <h2>Amount Operated by Category</h2>
+                    <select id="categoryFilter" class="category-select">
+                        <option value="all">All Categories</option>
+                    </select>
+                </div>
                 <div class="chart-container">
                     <canvas id="categoryChart"></canvas>
                 </div>
@@ -768,12 +785,12 @@
 
                                     // If both datasets are visible, show total first
                                     if (isCreditVisible && isDebitVisible) {
-                                        labels.push(`Total: ${new Intl.NumberFormat('en-US').format(total)}`);
+                                        labels.push(`Total: ${new Intl.NumberFormat('es-MX').format(total)}`);
                                     }
 
                                     // Add Debit info if visible (now before Credit)
                                     if (isDebitVisible) {
-                                        const debitLabel = `Debit: ${new Intl.NumberFormat('en-US').format(debitValue)}`;
+                                        const debitLabel = `Debit: ${new Intl.NumberFormat('es-MX').format(debitValue)}`;
                                         if (isCreditVisible) {
                                             // Only add percentage if both are visible
                                             const debitPercent = ((debitValue / total) * 100).toFixed(1);
@@ -785,7 +802,7 @@
 
                                     // Add Credit info if visible (now after Debit)
                                     if (isCreditVisible) {
-                                        const creditLabel = `Credit: ${new Intl.NumberFormat('en-US').format(creditValue)}`;
+                                        const creditLabel = `Credit: ${new Intl.NumberFormat('es-MX').format(creditValue)}`;
                                         if (isDebitVisible) {
                                             // Only add percentage if both are visible
                                             const creditPercent = ((creditValue / total) * 100).toFixed(1);
@@ -834,8 +851,8 @@
                                         return '';
                                     } else {
                                         // Show month and year
-                                        return date.toLocaleDateString('en-US', { 
-                                            month: 'short',
+                                        return date.toLocaleDateString('es-MX', { 
+                                            month: 'numeric',
                                             year: 'numeric'
                                         });
                                     }
@@ -962,12 +979,20 @@
 
         // Function to create category chart
         async function createCategoryChart() {
+            // Get selected category
+            const selectedCategory = document.getElementById('categoryFilter').value;
+            
             // Initialize arrays to store aggregated data
             let allDates = new Set();
             let aggregatedData = {};
 
             // Process data from all categories
             for (const category of Object.keys(AMOUNT)) {
+                // Skip if a specific category is selected and it's not the current one
+                if (selectedCategory !== 'all' && category !== selectedCategory) {
+                    continue;
+                }
+
                 const creditData = dataCache.amount[AMOUNT[category].credit] || [];
                 const debitData = dataCache.amount[AMOUNT[category].debit] || [];
 
@@ -1061,11 +1086,11 @@
                                     const isDebitVisible = context.chart.isDatasetVisible(1);
 
                                     if (isCreditVisible && isDebitVisible) {
-                                        labels.push(`Total: ${new Intl.NumberFormat('en-US').format(total)}`);
+                                        labels.push(`Total: ${new Intl.NumberFormat('es-MX').format(total)}`);
                                     }
 
                                     if (isDebitVisible) {
-                                        const debitLabel = `Debit: ${new Intl.NumberFormat('en-US').format(debitValue)}`;
+                                        const debitLabel = `Debit: ${new Intl.NumberFormat('es-MX').format(debitValue)}`;
                                         if (isCreditVisible) {
                                             const debitPercent = ((debitValue / total) * 100).toFixed(1);
                                             labels.push(`${debitLabel} (${debitPercent}%)`);
@@ -1075,7 +1100,7 @@
                                     }
 
                                     if (isCreditVisible) {
-                                        const creditLabel = `Credit: ${new Intl.NumberFormat('en-US').format(creditValue)}`;
+                                        const creditLabel = `Credit: ${new Intl.NumberFormat('es-MX').format(creditValue)}`;
                                         if (isDebitVisible) {
                                             const creditPercent = ((creditValue / total) * 100).toFixed(1);
                                             labels.push(`${creditLabel} (${creditPercent}%)`);
@@ -1113,23 +1138,11 @@
                                 callback: function(value, index, values) {
                                     const date = new Date(this.getLabelForValue(value));
                                     
-                                    // Calculate the total number of ticks
-                                    const totalTicks = values.length;
-                                    
-                                    // If we have too many ticks (e.g., more than 12), show only years
-                                    if (totalTicks > 12) {
-                                        // Only show the year for January or first data point
-                                        if (date.getMonth() === 0 || index === 0) {
-                                            return date.getFullYear();
-                                        }
-                                        return '';
-                                    } else {
-                                        // Show month and year
-                                        return date.toLocaleDateString('en-US', { 
-                                            month: 'short',
-                                            year: 'numeric'
-                                        });
-                                    }
+                                    // Show month and year
+                                    return date.toLocaleDateString('es-MX', { 
+                                        month: 'numeric',
+                                        year: 'numeric'
+                                    });
                                 },
                                 maxRotation: 0,
                                 minRotation: 0
@@ -1143,10 +1156,35 @@
             });
         }
 
+        // Function to populate category dropdown
+        function populateCategoryDropdown() {
+            const categoryFilter = document.getElementById('categoryFilter');
+            
+            // Clear existing options except "All Categories"
+            while (categoryFilter.options.length > 1) {
+                categoryFilter.remove(1);
+            }
+            
+            // Add all categories
+            Object.keys(AMOUNT).forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categoryFilter.appendChild(option);
+            });
+        }
+
+        // Add event listener for category filter
+        document.getElementById('categoryFilter').addEventListener('change', function() {
+            createCategoryChart();
+        });
+
         // Initialize the page
         window.onload = () => {
             // Load all data at once
             loadAllData();
+            // Populate category dropdown
+            populateCategoryDropdown();
         };
     </script>
 </body>
