@@ -94,7 +94,7 @@
             border-radius: 0 4px 4px 0;
         }
         .toggle-button.active {
-            background-color: #4CAF50;
+            background-color: rgb(29, 82, 120);
             color: white;
         }
         .toggle-button:hover:not(.active) {
@@ -159,14 +159,22 @@
                 </div>
             </div>
             <div class="quadrant">
-                <h2>Chart 2</h2>
+                <div class="quadrant-header">
+                    <h2>Category Distribution</h2>
+                    <div class="toggle-container">
+                        <div class="toggle-group">
+                            <button id="dataTypeToggle" class="toggle-button active">Amount</button>
+                            <button id="transactionsToggle" class="toggle-button">Transactions</button>
+                        </div>
+                    </div>
+                </div>
                 <div class="chart-container">
                     <canvas id="chart2"></canvas>
                 </div>
             </div>
             <div class="quadrant" id="quadrant3">
                 <div class="quadrant-header">
-                    <h2>Amount Operated by Category</h2>
+                    <h2>Amount Operated in All Categories</h2>
                     <select id="categoryFilter" class="category-select">
                         <option value="all">All Categories</option>
                     </select>
@@ -175,10 +183,15 @@
                     <canvas id="categoryChart"></canvas>
                 </div>
             </div>
-            <div class="quadrant">
-                <h2>Chart 4</h2>
+            <div class="quadrant" id="quadrant4">
+                <div class="quadrant-header">
+                    <h2>Transactions in Category</h2>
+                    <select id="transactionCategoryFilter" class="category-select">
+                        <option value="all">All Categories</option>
+                    </select>
+                </div>
                 <div class="chart-container">
-                    <canvas id="chart4"></canvas>
+                    <canvas id="transactionChart"></canvas>
                 </div>
             </div>
         </div>
@@ -230,6 +243,7 @@
             
             createChart(currentMode);
             createCategoryChart();
+            createTransactionChart();
         }
 
         const API_TOKEN = 'f1d62f388e9038fc9c9453d68e765b788a4ad53c71789f1864da5c6c7fa5e2ae';
@@ -498,6 +512,19 @@
         let currentChart = null;
         let currentMode = 'issued';
         let categoryChart = null;
+        let transactionChart = null;
+        let currentDataType = 'amount'; // Track current data type for second quadrant
+
+        // Helper function to convert date from DD/MM/YYYY to YYYY-MM-DD
+        function convertDateFormat(dateStr) {
+            const [day, month, year] = dateStr.split('/');
+            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+
+        // Helper function to parse Mexican formatted numbers
+        function parseMexicanNumber(str) {
+            return parseFloat(str.replace(/,/g, ''));
+        }
 
         // Function to fetch data for multiple series IDs in batches
         async function fetchDataBatch(seriesIds) {
@@ -522,7 +549,12 @@
                     // Process each series in the response
                     if (data.bmx && data.bmx.series) {
                         data.bmx.series.forEach(series => {
-                            results[series.idSerie] = series.datos;
+                            // Convert date format and parse numbers in the data before storing
+                            const convertedData = series.datos.map(item => ({
+                                fecha: convertDateFormat(item.fecha),
+                                dato: parseMexicanNumber(item.dato)  // Parse the number here
+                            }));
+                            results[series.idSerie] = convertedData;
                         });
                     }
                     
@@ -699,7 +731,7 @@
         // Function to initialize charts after data is loaded
         function initializeCharts() {
             // Set fixed date range
-            const minDate = new Date('2002-01-01');
+            const minDate = new Date('01-01-2002');
             const today = new Date();
             
             // Set the date inputs
@@ -713,6 +745,7 @@
             // Create initial charts and set card type
             createChart('issued');
             createCategoryChart();
+            createTransactionChart();
             updateCardTypeButtons('all');
         }
 
@@ -742,18 +775,18 @@
                     labels: dates,
                     datasets: [
                         {
-                            label: 'Credit',
-                            data: creditValues,
-                            backgroundColor: 'rgba(76, 175, 80, 0.8)',
-                            borderColor: '#4CAF50',
+                            label: 'Debit',
+                            data: debitValues,
+                            backgroundColor: 'rgba(22, 111, 76, 0.8)',
+                            borderColor: '#166F4C',
                             borderWidth: 1,
                             stack: 'Total'
                         },
                         {
-                            label: 'Debit',
-                            data: debitValues,
-                            backgroundColor: 'rgba(33, 150, 243, 0.8)',
-                            borderColor: '#2196F3',
+                            label: 'Credit',
+                            data: creditValues,
+                            backgroundColor: 'rgba(50, 199, 127, 0.8)',
+                            borderColor: '#32C77F',
                             borderWidth: 1,
                             stack: 'Total'
                         }
@@ -774,38 +807,38 @@
                                     return tooltipItems[0].label; // This is the date
                                 },
                                 label: function(context) {
-                                    const creditValue = context.chart.data.datasets[0].data[context.dataIndex];
-                                    const debitValue = context.chart.data.datasets[1].data[context.dataIndex];
-                                    const total = creditValue + debitValue;
+                                    const debitValue = context.chart.data.datasets[0].data[context.dataIndex];
+                                    const creditValue = context.chart.data.datasets[1].data[context.dataIndex];
+                                    const total = debitValue + creditValue;
                                     const labels = [];
 
                                     // Check which datasets are visible
-                                    const isCreditVisible = context.chart.isDatasetVisible(0);
-                                    const isDebitVisible = context.chart.isDatasetVisible(1);
+                                    const isDebitVisible = context.chart.isDatasetVisible(0);
+                                    const isCreditVisible = context.chart.isDatasetVisible(1);
 
                                     // If both datasets are visible, show total first
-                                    if (isCreditVisible && isDebitVisible) {
-                                        labels.push(`Total: ${new Intl.NumberFormat('es-MX').format(total)}`);
+                                    if (isDebitVisible && isCreditVisible) {
+                                        labels.push(`Total: ${new Intl.NumberFormat('es-MX').format(Math.round(total / 1000000))}M`);
                                     }
 
-                                    // Add Debit info if visible (now before Credit)
+                                    // Add Debit info if visible
                                     if (isDebitVisible) {
-                                        const debitLabel = `Debit: ${new Intl.NumberFormat('es-MX').format(debitValue)}`;
+                                        const debitLabel = `Debit: ${new Intl.NumberFormat('es-MX').format(Math.round(debitValue / 1000000))}M`;
                                         if (isCreditVisible) {
                                             // Only add percentage if both are visible
-                                            const debitPercent = ((debitValue / total) * 100).toFixed(1);
+                                            const debitPercent = Math.round((debitValue / total) * 100);
                                             labels.push(`${debitLabel} (${debitPercent}%)`);
                                         } else {
                                             labels.push(debitLabel);
                                         }
                                     }
 
-                                    // Add Credit info if visible (now after Debit)
+                                    // Add Credit info if visible
                                     if (isCreditVisible) {
-                                        const creditLabel = `Credit: ${new Intl.NumberFormat('es-MX').format(creditValue)}`;
+                                        const creditLabel = `Credit: ${new Intl.NumberFormat('es-MX').format(Math.round(creditValue / 1000000))}M`;
                                         if (isDebitVisible) {
                                             // Only add percentage if both are visible
-                                            const creditPercent = ((creditValue / total) * 100).toFixed(1);
+                                            const creditPercent = Math.round((creditValue / total) * 100);
                                             labels.push(`${creditLabel} (${creditPercent}%)`);
                                         } else {
                                             labels.push(creditLabel);
@@ -838,27 +871,16 @@
                             ticks: {
                                 callback: function(value, index, values) {
                                     const date = new Date(this.getLabelForValue(value));
-                                    
-                                    // Calculate the total number of ticks
-                                    const totalTicks = values.length;
-                                    
-                                    // If we have too many ticks (e.g., more than 12), show only years
-                                    if (totalTicks > 12) {
-                                        // Only show the year for January or first data point
-                                        if (date.getMonth() === 0 || index === 0) {
-                                            return date.getFullYear();
-                                        }
-                                        return '';
-                                    } else {
-                                        // Show month and year
-                                        return date.toLocaleDateString('es-MX', { 
-                                            month: 'numeric',
-                                            year: 'numeric'
-                                        });
-                                    }
+                                    return date.toLocaleDateString('en-US', { 
+                                        month: 'short',
+                                        year: 'numeric'
+                                    });
                                 },
                                 maxRotation: 0,
-                                minRotation: 0
+                                minRotation: 0,
+                                autoSkip: true,
+                                autoSkipPadding: 20,
+                                maxTicksLimit: 20
                             },
                             grid: {
                                 display: false
@@ -934,16 +956,50 @@
             if (currentChart) {
                 if (type === 'all') {
                     // Show both datasets
-                    currentChart.show(0); // Show Credit Cards (index 0)
-                    currentChart.show(1); // Show Debit Cards (index 1)
+                    currentChart.show(0); // Show Debit Cards (index 0)
+                    currentChart.show(1); // Show Credit Cards (index 1)
                 } else if (type === 'credit') {
                     // Show only Credit Cards
-                    currentChart.show(0); // Show Credit Cards (index 0)
-                    currentChart.hide(1); // Hide Debit Cards (index 1)
+                    currentChart.show(1); // Show Credit Cards (index 1)
+                    currentChart.hide(0); // Hide Debit Cards (index 0)
                 } else if (type === 'debit') {
                     // Show only Debit Cards
-                    currentChart.hide(0); // Hide Credit Cards (index 0)
-                    currentChart.show(1); // Show Debit Cards (index 1)
+                    currentChart.hide(1); // Hide Credit Cards (index 1)
+                    currentChart.show(0); // Show Debit Cards (index 0)
+                }
+            }
+
+            // Update category chart visibility based on type
+            if (categoryChart) {
+                if (type === 'all') {
+                    // Show both datasets
+                    categoryChart.show(0); // Show Debit Cards (index 0)
+                    categoryChart.show(1); // Show Credit Cards (index 1)
+                } else if (type === 'credit') {
+                    // Show only Credit Cards
+                    categoryChart.show(1); // Show Credit Cards (index 1)
+                    categoryChart.hide(0); // Hide Debit Cards (index 0)
+                } else if (type === 'debit') {
+                    // Show only Debit Cards
+                    categoryChart.hide(1); // Hide Credit Cards (index 1)
+                    categoryChart.show(0); // Show Debit Cards (index 0)
+                }
+            }
+
+            // Update transaction chart visibility based on type
+            if (transactionChart) {
+                if (type === 'all') {
+                    // Show both datasets
+                    transactionChart.show(0); // Show Debit Cards (index 0)
+                    transactionChart.show(1); // Show Credit Cards (index 1)
+                } else if (type === 'credit') {
+                    // Show only Credit Cards
+                    transactionChart.show(1); // Show Credit Cards (index 1)
+                    transactionChart.hide(0); // Hide Debit Cards (index 0)
+                } else if (type === 'debit') {
+                    // Show only Debit Cards
+                    transactionChart.hide(1); // Hide Credit Cards (index 1)
+                    transactionChart.show(0); // Show Debit Cards (index 0)
                 }
             }
         }
@@ -1038,18 +1094,18 @@
                     labels: dates,
                     datasets: [
                         {
-                            label: 'Credit',
-                            data: creditValues,
-                            backgroundColor: 'rgba(76, 175, 80, 0.8)',
-                            borderColor: '#4CAF50',
+                            label: 'Debit',
+                            data: debitValues,
+                            backgroundColor: 'rgba(22, 111, 76, 0.8)',
+                            borderColor: '#166F4C',
                             borderWidth: 1,
                             stack: 'Total'
                         },
                         {
-                            label: 'Debit',
-                            data: debitValues,
-                            backgroundColor: 'rgba(33, 150, 243, 0.8)',
-                            borderColor: '#2196F3',
+                            label: 'Credit',
+                            data: creditValues,
+                            backgroundColor: 'rgba(50, 199, 127, 0.8)',
+                            borderColor: '#32C77F',
                             borderWidth: 1,
                             stack: 'Total'
                         }
@@ -1077,22 +1133,22 @@
                                     return tooltipItems[0].label;
                                 },
                                 label: function(context) {
-                                    const creditValue = context.chart.data.datasets[0].data[context.dataIndex];
-                                    const debitValue = context.chart.data.datasets[1].data[context.dataIndex];
-                                    const total = creditValue + debitValue;
+                                    const debitValue = context.chart.data.datasets[0].data[context.dataIndex];
+                                    const creditValue = context.chart.data.datasets[1].data[context.dataIndex];
+                                    const total = debitValue + creditValue;
                                     const labels = [];
 
-                                    const isCreditVisible = context.chart.isDatasetVisible(0);
-                                    const isDebitVisible = context.chart.isDatasetVisible(1);
+                                    const isDebitVisible = context.chart.isDatasetVisible(0);
+                                    const isCreditVisible = context.chart.isDatasetVisible(1);
 
-                                    if (isCreditVisible && isDebitVisible) {
-                                        labels.push(`Total: ${new Intl.NumberFormat('es-MX').format(total)}`);
+                                    if (isDebitVisible && isCreditVisible) {
+                                        labels.push(`Total: ${new Intl.NumberFormat('es-MX').format(Math.round(total / 1000))}K`);
                                     }
 
                                     if (isDebitVisible) {
-                                        const debitLabel = `Debit: ${new Intl.NumberFormat('es-MX').format(debitValue)}`;
+                                        const debitLabel = `Debit: ${new Intl.NumberFormat('es-MX').format(Math.round(debitValue / 1000))}K`;
                                         if (isCreditVisible) {
-                                            const debitPercent = ((debitValue / total) * 100).toFixed(1);
+                                            const debitPercent = Math.round((debitValue / total) * 100);
                                             labels.push(`${debitLabel} (${debitPercent}%)`);
                                         } else {
                                             labels.push(debitLabel);
@@ -1100,9 +1156,9 @@
                                     }
 
                                     if (isCreditVisible) {
-                                        const creditLabel = `Credit: ${new Intl.NumberFormat('es-MX').format(creditValue)}`;
+                                        const creditLabel = `Credit: ${new Intl.NumberFormat('es-MX').format(Math.round(creditValue / 1000))}K`;
                                         if (isDebitVisible) {
-                                            const creditPercent = ((creditValue / total) * 100).toFixed(1);
+                                            const creditPercent = Math.round((creditValue / total) * 100);
                                             labels.push(`${creditLabel} (${creditPercent}%)`);
                                         } else {
                                             labels.push(creditLabel);
@@ -1122,11 +1178,16 @@
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Amount Operated ($B MXN)'
+                                text: 'Amount Operated ($M   MXN)'
                             },
                             stacked: true,
                             grid: {
                                 display: false
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return new Intl.NumberFormat('es-MX').format(Math.round(value / 1000));
+                                }
                             }
                         },
                         x: {
@@ -1137,15 +1198,16 @@
                             ticks: {
                                 callback: function(value, index, values) {
                                     const date = new Date(this.getLabelForValue(value));
-                                    
-                                    // Show month and year
-                                    return date.toLocaleDateString('es-MX', { 
-                                        month: 'numeric',
+                                    return date.toLocaleDateString('en-US', { 
+                                        month: 'short',
                                         year: 'numeric'
                                     });
                                 },
                                 maxRotation: 0,
-                                minRotation: 0
+                                minRotation: 0,
+                                autoSkip: true,
+                                autoSkipPadding: 20,
+                                maxTicksLimit: 20
                             },
                             grid: {
                                 display: false
@@ -1176,15 +1238,261 @@
 
         // Add event listener for category filter
         document.getElementById('categoryFilter').addEventListener('change', function() {
+            // Update the quadrant title based on selected category
+            const selectedCategory = this.value;
+            const quadrant3Title = document.querySelector('#quadrant3 h2');
+            const baseTitle = 'Amount Operated in ';
+            quadrant3Title.textContent = selectedCategory === 'all' ? 
+                baseTitle + 'All Categories' : 
+                baseTitle + selectedCategory;
+
+            // Update the chart
             createCategoryChart();
+        });
+
+        // Function to create transaction chart
+        async function createTransactionChart() {
+            // Get selected category
+            const selectedCategory = document.getElementById('transactionCategoryFilter').value;
+            
+            // Initialize arrays to store aggregated data
+            let allDates = new Set();
+            let aggregatedData = {};
+
+            // Process data from all categories
+            for (const category of Object.keys(TRANSACTIONS)) {
+                // Skip if a specific category is selected and it's not the current one
+                if (selectedCategory !== 'all' && category !== selectedCategory) {
+                    continue;
+                }
+
+                const creditData = dataCache.transactions[TRANSACTIONS[category].credit] || [];
+                const debitData = dataCache.transactions[TRANSACTIONS[category].debit] || [];
+
+                // Filter data based on date range
+                const filteredCreditData = filterDataByDateRange(creditData, startDate, endDate);
+                const filteredDebitData = filterDataByDateRange(debitData, startDate, endDate);
+
+                // Add dates to the set
+                filteredCreditData.forEach(item => allDates.add(item.fecha));
+                filteredDebitData.forEach(item => allDates.add(item.fecha));
+
+                // Aggregate data by date
+                filteredCreditData.forEach(item => {
+                    if (!aggregatedData[item.fecha]) {
+                        aggregatedData[item.fecha] = { credit: 0, debit: 0 };
+                    }
+                    aggregatedData[item.fecha].credit += parseFloat(item.dato);
+                });
+
+                filteredDebitData.forEach(item => {
+                    if (!aggregatedData[item.fecha]) {
+                        aggregatedData[item.fecha] = { credit: 0, debit: 0 };
+                    }
+                    aggregatedData[item.fecha].debit += parseFloat(item.dato);
+                });
+            }
+
+            // Convert dates set to sorted array
+            const dates = Array.from(allDates).sort();
+            
+            // Create arrays for chart data
+            const creditValues = dates.map(date => aggregatedData[date]?.credit || 0);
+            const debitValues = dates.map(date => aggregatedData[date]?.debit || 0);
+
+            const ctx = document.getElementById('transactionChart').getContext('2d');
+            if (transactionChart) {
+                transactionChart.destroy();
+            }
+
+            transactionChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: 'Debit',
+                            data: debitValues,
+                            backgroundColor: 'rgba(22, 111, 76, 0.8)',
+                            borderColor: '#166F4C',
+                            borderWidth: 1,
+                            stack: 'Total'
+                        },
+                        {
+                            label: 'Credit',
+                            data: creditValues,
+                            backgroundColor: 'rgba(50, 199, 127, 0.8)',
+                            borderColor: '#32C77F',
+                            borderWidth: 1,
+                            stack: 'Total'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: false,
+                            text: 'Transactions by Category',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        legend: {
+                            position: 'top',
+                            onClick: function() {},
+                            align: 'end'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return tooltipItems[0].label;
+                                },
+                                label: function(context) {
+                                    const debitValue = context.chart.data.datasets[0].data[context.dataIndex];
+                                    const creditValue = context.chart.data.datasets[1].data[context.dataIndex];
+                                    const total = debitValue + creditValue;
+                                    const labels = [];
+
+                                    const isDebitVisible = context.chart.isDatasetVisible(0);
+                                    const isCreditVisible = context.chart.isDatasetVisible(1);
+
+                                    if (isDebitVisible && isCreditVisible) {
+                                        labels.push(`Total: ${new Intl.NumberFormat('es-MX').format(Math.round(total / 1000))}K`);
+                                    }
+
+                                    if (isDebitVisible) {
+                                        const debitLabel = `Debit: ${new Intl.NumberFormat('es-MX').format(Math.round(debitValue / 1000))}K`;
+                                        if (isCreditVisible) {
+                                            const debitPercent = Math.round((debitValue / total) * 100);
+                                            labels.push(`${debitLabel} (${debitPercent}%)`);
+                                        } else {
+                                            labels.push(debitLabel);
+                                        }
+                                    }
+
+                                    if (isCreditVisible) {
+                                        const creditLabel = `Credit: ${new Intl.NumberFormat('es-MX').format(Math.round(creditValue / 1000))}K`;
+                                        if (isDebitVisible) {
+                                            const creditPercent = Math.round((creditValue / total) * 100);
+                                            labels.push(`${creditLabel} (${creditPercent}%)`);
+                                        } else {
+                                            labels.push(creditLabel);
+                                        }
+                                    }
+
+                                    return labels;
+                                }
+                            },
+                            usePointStyle: false,
+                            boxPadding: 0,
+                            displayColors: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Transactions (K)'
+                            },
+                            stacked: true,
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return new Intl.NumberFormat('es-MX').format(Math.round(value / 1000));
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: false,
+                            },
+                            stacked: true,
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    const date = new Date(this.getLabelForValue(value));
+                                    return date.toLocaleDateString('en-US', { 
+                                        month: 'short',
+                                        year: 'numeric'
+                                    });
+                                },
+                                maxRotation: 0,
+                                minRotation: 0,
+                                autoSkip: true,
+                                autoSkipPadding: 20,
+                                maxTicksLimit: 20
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Function to populate transaction category dropdown
+        function populateTransactionCategoryDropdown() {
+            const categoryFilter = document.getElementById('transactionCategoryFilter');
+            
+            // Clear existing options except "All Categories"
+            while (categoryFilter.options.length > 1) {
+                categoryFilter.remove(1);
+            }
+            
+            // Add all categories
+            Object.keys(TRANSACTIONS).forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categoryFilter.appendChild(option);
+            });
+        }
+
+        // Add event listener for transaction category filter
+        document.getElementById('transactionCategoryFilter').addEventListener('change', function() {
+            // Update the quadrant title based on selected category
+            const selectedCategory = this.value;
+            const quadrant4Title = document.querySelector('#quadrant4 h2');
+            const baseTitle = 'Transactions in ';
+            quadrant4Title.textContent = selectedCategory === 'all' ? 
+                baseTitle + 'All Categories' : 
+                baseTitle + selectedCategory;
+
+            // Update the chart
+            createTransactionChart();
+        });
+
+        // Add event listeners for data type toggle
+        document.getElementById('dataTypeToggle').addEventListener('click', function() {
+            if (currentDataType !== 'amount') {
+                currentDataType = 'amount';
+                this.classList.add('active');
+                document.getElementById('transactionsToggle').classList.remove('active');
+                // Chart update will be implemented later
+            }
+        });
+
+        document.getElementById('transactionsToggle').addEventListener('click', function() {
+            if (currentDataType !== 'transactions') {
+                currentDataType = 'transactions';
+                this.classList.add('active');
+                document.getElementById('dataTypeToggle').classList.remove('active');
+                // Chart update will be implemented later
+            }
         });
 
         // Initialize the page
         window.onload = () => {
             // Load all data at once
             loadAllData();
-            // Populate category dropdown
+            // Populate category dropdowns
             populateCategoryDropdown();
+            populateTransactionCategoryDropdown();
         };
     </script>
 </body>
